@@ -1,7 +1,10 @@
+import 'dotenv/config'
 import express from 'express'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import cors from 'cors'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { initDb } from './db.js'
 import db from './db.js'
 import authRoutes from './routes/auth.js'
@@ -11,19 +14,26 @@ import adminRoutes from './routes/admin.js'
 import jwt from 'jsonwebtoken'
 import { SECRET_KEY } from './middleware/auth.js'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const isProd = process.env.NODE_ENV === 'production'
+
 const app = express()
 const httpServer = createServer(app)
+
 const io = new Server(httpServer, {
-  cors: { origin: 'http://localhost:5173', credentials: true }
+  cors: isProd ? false : { origin: 'http://localhost:5173', credentials: true }
 })
 
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }))
+if (!isProd) {
+  app.use(cors({ origin: 'http://localhost:5173', credentials: true }))
+}
+
 app.use(express.json())
 
 // Init DB
 initDb()
 
-// Routes
+// API Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/attorneys', attorneyRoutes)
 app.use('/api/consultations', consultationRoutes)
@@ -45,8 +55,19 @@ app.patch('/api/notifications/:id/read', (req, res) => {
   res.json({ ok: true })
 })
 
+// 프로덕션: 프론트엔드 정적 파일 서빙
+if (isProd) {
+  const distPath = path.join(__dirname, '..', 'dist')
+  app.use(express.static(distPath))
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.join(distPath, 'index.html'))
+    }
+  })
+}
+
 // ─── Socket.io 실시간 채팅 ───────────────────────────────────
-const onlineUsers = new Map() // userId → socketId
+const onlineUsers = new Map()
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token
@@ -61,7 +82,6 @@ io.on('connection', (socket) => {
   const user = socket.user
   onlineUsers.set(user.id, socket.id)
 
-  // 노무사면 온라인 상태 업데이트
   if (user.role === 'attorney') {
     db.prepare('UPDATE attorney_profiles SET is_online=1 WHERE user_id=?').run(user.id)
     io.emit('attorney_online', { user_id: user.id, is_online: true })
@@ -69,13 +89,10 @@ io.on('connection', (socket) => {
 
   console.log(`✅ 연결: ${user.name} (${user.role})`)
 
-  // 상담방 입장
   socket.on('join_consultation', (consultationId) => {
     socket.join(`consultation_${consultationId}`)
-    console.log(`${user.name} → 상담방 ${consultationId}`)
   })
 
-  // 메시지 전송
   socket.on('send_message', ({ consultationId, content }) => {
     const result = db.prepare(`
       INSERT INTO chat_messages (consultation_id, sender_id, sender_role, content)
@@ -88,10 +105,8 @@ io.on('connection', (socket) => {
       WHERE m.id = ?
     `).get(result.lastInsertRowid)
 
-    // 상담방 전체에 브로드캐스트
     io.to(`consultation_${consultationId}`).emit('new_message', message)
 
-    // 상대방에게 알림
     const consultation = db.prepare('SELECT * FROM consultations WHERE id=?').get(consultationId)
     const recipientId = user.id === consultation.user_id
       ? db.prepare('SELECT user_id FROM attorney_profiles WHERE id=?').get(consultation.attorney_id)?.user_id
@@ -104,7 +119,6 @@ io.on('connection', (socket) => {
     }
   })
 
-  // 타이핑 표시
   socket.on('typing', ({ consultationId, isTyping }) => {
     socket.to(`consultation_${consultationId}`).emit('peer_typing', { isTyping, name: user.name })
   })
