@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude-in-chrome__navigate",
+      "WebFetch(domain:www.findsemusa.com)",
+      "Bash(npm install *)",
+      "Bash(node server/index.js)",
+      "Bash(Start-Sleep -Seconds 3)",
+      "Bash(Get-Content \"C:\\\\Users\\\\a\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-a-Desktop----\\\\e91991b4-5e7e-4c02-aef7-59e9296679f1\\\\tasks\\\\bkwji3d80.output\" -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\a\\\\Desktop\\\\노무사\\\\node_modules\\\\.vite\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Output \"cache cleared\")"
+    ]
+  }
+}
